@@ -1,0 +1,12 @@
+__pycache__/
+*.egg-info/
+data/
+artifacts/
+.terraform/
+*.tfstate*
+snapshots/
+.archify/
+*.log
+.pytest_cache/
+.venv/
+.terraform.lock.hcl.bak
