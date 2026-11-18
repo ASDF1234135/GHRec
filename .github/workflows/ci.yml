@@ -10,3 +10,10 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
       - run: python -m ghrec.train --synthetic --T 2026-11-08 --artifacts /tmp/art  # smoke: full pipeline + gate
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive infra
+      - run: for e in dev prod; do (cd infra/$e && terraform init -backend=false -input=false && terraform validate); done

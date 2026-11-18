@@ -18,6 +18,17 @@ variable "alert_email" {
   type = string
 }
 
+variable "enable_mlflow" {
+  description = "Create the shared MLflow server (App Runner, bills monthly). Build and push mlflow/Dockerfile first."
+  type        = bool
+  default     = false
+}
+
+variable "mlflow_image" {
+  type    = string
+  default = ""
+}
+
 provider "aws" {
   region = var.region
 }
@@ -29,6 +40,13 @@ module "data_platform" {
   alert_email            = var.alert_email
   monthly_budget_usd     = 50
   daily_schedule_enabled = true
+}
+
+module "mlflow" {
+  count  = var.enable_mlflow ? 1 : 0
+  source = "../modules/mlflow"
+  prefix = "ghrec-prod"
+  image  = var.mlflow_image
 }
 
 output "data_bucket" {

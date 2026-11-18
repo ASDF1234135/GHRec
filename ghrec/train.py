@@ -1,6 +1,6 @@
 """Build snapshot, train challenger, evaluate challenger vs champion on the same snapshot, promote via gate.
 Usage: python -m ghrec.train [--root data | --synthetic] [--T 2026-11-08] [--artifacts artifacts]"""
-import argparse, json, os
+import argparse, json, os, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -50,6 +50,8 @@ def run(df: pl.DataFrame, T: datetime, artifacts: Path, prod_json: Path | None =
 def _log_mlflow(res: dict, T: datetime, spans, k, with_meta: bool, model_path: Path | None) -> None:
     """One run per training; the `snapshot` tag lets the leaderboard compare only runs on the same snapshot."""
     import mlflow  # optional dependency: pip install ".[mlflow]"
+
+    sys.stdout.reconfigure(errors="replace")  # MLflow prints an emoji when a run ends; a cp950/cp1252 Windows console would crash
 
     mlflow.set_experiment("ghrec")
     with mlflow.start_run(run_name=res["snapshot"]):
