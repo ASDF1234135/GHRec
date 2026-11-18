@@ -58,5 +58,12 @@ if __name__ == "__main__":
     ap.add_argument("start"); ap.add_argument("end", nargs="?"); ap.add_argument("--root", default="data")
     a = ap.parse_args()
     d, end = date.fromisoformat(a.start), date.fromisoformat(a.end or a.start)
+    failed = []
     while d <= end:
-        ingest_day(d, Path(a.root)); print("ingested", d); d += timedelta(days=1)
+        try:
+            ingest_day(d, Path(a.root)); print("ingested", d)
+        except ValueError as e:  # a day failing QA is not written; keep backfilling, then exit non-zero so it alerts
+            print("FAILED", e); failed.append(d)
+        d += timedelta(days=1)
+    if failed:
+        raise SystemExit(f"{len(failed)} day(s) failed QA: {[str(x) for x in failed]}")
