@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from ghrec.data import clean, prepare, snapshot_version, split, synthetic
 from ghrec.pipeline import Pipeline
 from ghrec import s3sync
+from ghrec.features import repo_features, user_features
 from ghrec.enrich import RateLimited, enrich
 from ghrec.ingest import check, extract
 from ghrec.train import run
@@ -214,3 +215,32 @@ def test_s3sync_round_trip_and_skips_unchanged(tmp_path, monkeypatch):
     (root / "raw_events/date=2026-11-02/events.parquet").write_bytes(b"new!")
     s3sync.push()
     assert store["raw_events/date=2026-11-02/events.parquet"] == b"new!" and len(store) == 2
+
+
+def _events(rows):
+    return pl.DataFrame(rows, schema=["user", "repo", "type", "ts"], orient="row")
+
+
+def test_features_are_point_in_time_and_windowed():
+    asof = datetime(2026, 11, 10)
+    ev = _events([
+        ("a", "o/r", "WatchEvent", asof - timedelta(hours=1)),    # inside the 1d window
+        ("b", "o/r", "WatchEvent", asof - timedelta(days=3)),     # 7d and 30d only
+        ("c", "o/r", "ForkEvent", asof - timedelta(days=20)),     # event, not a star
+        ("d", "o/r", "WatchEvent", asof - timedelta(days=40)),    # outside every window
+        ("e", "o/r", "WatchEvent", asof),                          # AT asof: the future, must be ignored
+        ("f", "o/r", "WatchEvent", asof + timedelta(days=2)),     # after asof: must be ignored
+    ])
+    r = repo_features(ev, asof).row(0, named=True)
+    assert (r["stars_1d"], r["stars_7d"], r["stars_30d"], r["events_30d"], r["users_30d"]) == (1, 2, 2, 3, 3)
+    only_past = ev.filter(pl.col("ts") < asof)
+    assert repo_features(ev, asof).equals(repo_features(only_past, asof))  # future rows change nothing
+    assert user_features(ev, asof).filter(pl.col("user") == "e").height == 0  # a user who only appears at/after asof
+
+
+def test_user_features_count_distinct_repos():
+    asof = datetime(2026, 11, 10)
+    ev = _events([("a", "o/1", "WatchEvent", asof - timedelta(days=1)), ("a", "o/1", "ForkEvent", asof - timedelta(days=2)),
+                  ("a", "o/2", "IssuesEvent", asof - timedelta(days=9))])
+    u = user_features(ev, asof).row(0, named=True)
+    assert (u["events_7d"], u["events_30d"], u["repos_30d"], u["stars_30d"]) == (2, 3, 2, 1)
