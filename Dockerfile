@@ -4,8 +4,8 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY ghrec ghrec
 COPY service service
-RUN pip install --no-cache-dir ".[service]"
-# image = version: CD copies the promoted champion.pkl into ./artifacts before build.
+RUN pip install --no-cache-dir ".[service,aws]"
+# image = version: CD copies the promoted champion.pkl into ./artifacts before build (the API needs it, jobs do not).
 # Jobs reuse this image with a different command (python -m ghrec.ingest / ghrec.train).
-COPY artifacts artifacts
+RUN mkdir -p artifacts
 CMD ["uvicorn", "service.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from ghrec.data import clean, prepare, snapshot_version, split, synthetic
 from ghrec.pipeline import Pipeline
+from ghrec import s3sync
 from ghrec.enrich import RateLimited, enrich
 from ghrec.ingest import check, extract
 from ghrec.train import run
@@ -186,3 +187,30 @@ def test_qa_compares_only_with_earlier_days(tmp_path):
     assert check(df(51000), date(2026, 11, 4), tmp_path)["rows"] == 51000
     with pytest.raises(ValueError):
         check(df(10000), date(2026, 11, 4), tmp_path)  # a real drop is still caught
+
+
+class _FakeBucket:
+    def __init__(self, store):
+        self.store = store
+        self.objects = self
+
+    def all(self):
+        return [type("O", (), {"key": k, "size": len(v)})() for k, v in self.store.items()]
+
+    def download_file(self, key, path):
+        open(path, "wb").write(self.store[key])
+
+    def upload_file(self, path, key):
+        self.store[key] = open(path, "rb").read()
+
+
+def test_s3sync_round_trip_and_skips_unchanged(tmp_path, monkeypatch):
+    store = {"raw_events/date=2026-11-01/events.parquet": b"abc"}
+    root = tmp_path / "data"
+    monkeypatch.setattr(s3sync, "_bucket", lambda: (_FakeBucket(store), root))
+    s3sync.pull()
+    assert (root / "raw_events/date=2026-11-01/events.parquet").read_bytes() == b"abc"
+    (root / "raw_events/date=2026-11-02").mkdir()
+    (root / "raw_events/date=2026-11-02/events.parquet").write_bytes(b"new!")
+    s3sync.push()
+    assert store["raw_events/date=2026-11-02/events.parquet"] == b"new!" and len(store) == 2

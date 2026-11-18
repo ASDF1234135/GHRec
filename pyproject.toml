@@ -6,6 +6,7 @@ dependencies = ["numpy", "scipy", "polars", "pyarrow", "duckdb", "lightgbm", "sc
 
 [project.optional-dependencies]
 service = ["fastapi", "uvicorn", "redis", "orjson"]
+aws = ["boto3"]
 dev = ["pytest", "httpx", "fastapi", "redis"]
 
 [tool.setuptools.packages.find]
