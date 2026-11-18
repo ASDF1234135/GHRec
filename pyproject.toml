@@ -7,7 +7,8 @@ dependencies = ["numpy", "scipy", "polars", "pyarrow", "duckdb", "lightgbm", "sc
 [project.optional-dependencies]
 service = ["fastapi", "uvicorn", "redis", "orjson"]
 aws = ["boto3"]
-dev = ["pytest", "httpx", "fastapi", "redis"]
+mlflow = ["mlflow-skinny"]
+dev = ["pytest", "httpx", "fastapi", "redis", "mlflow-skinny"]
 
 [tool.setuptools.packages.find]
 include = ["ghrec*"]

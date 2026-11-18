@@ -244,3 +244,18 @@ def test_user_features_count_distinct_repos():
                   ("a", "o/2", "IssuesEvent", asof - timedelta(days=9))])
     u = user_features(ev, asof).row(0, named=True)
     assert (u["events_7d"], u["events_30d"], u["repos_30d"], u["stars_30d"]) == (2, 3, 2, 1)
+
+
+def test_training_logs_to_mlflow(tmp_path, monkeypatch):
+    mlflow = pytest.importorskip("mlflow")
+    monkeypatch.chdir(tmp_path)  # default artifact root is ./mlruns
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", (tmp_path / "mlruns").as_uri())
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")  # test-only: skinny client has no SQL backend
+    res = run(synthetic(T), T, tmp_path / "art")
+    client = mlflow.MlflowClient()
+    runs = client.search_runs([client.get_experiment_by_name("ghrec").experiment_id])
+    assert len(runs) == 1
+    r = runs[0]
+    assert r.data.tags["snapshot"] == res["snapshot"] and r.data.tags["promoted"] == "True"
+    assert abs(r.data.metrics["challenger_e2e_ndcg_at_10"] - res["challenger"]["e2e_ndcg@10"]) < 1e-9
+    assert [a.path for a in client.list_artifacts(r.info.run_id)] == ["champion.pkl"]

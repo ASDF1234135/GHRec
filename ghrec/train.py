@@ -1,6 +1,6 @@
 """Build snapshot, train challenger, evaluate challenger vs champion on the same snapshot, promote via gate.
 Usage: python -m ghrec.train [--root data | --synthetic] [--T 2026-11-08] [--artifacts artifacts]"""
-import argparse, json
+import argparse, json, os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -41,7 +41,26 @@ def run(df: pl.DataFrame, T: datetime, artifacts: Path, prod_json: Path | None =
         if prod_json:
             prod_json.parent.mkdir(parents=True, exist_ok=True)
             prod_json.write_text(json.dumps({"snapshot": T.date().isoformat(), "model": str(champ_path), "metrics": m}, indent=2))
-    return {"snapshot": version, "n_repos": len(repos), "rows": {n: p.height for n, p in seg.items()}, "promoted": ok, "reason": why, "challenger": m, "champion": cm}
+    res = {"snapshot": version, "n_repos": len(repos), "rows": {n: p.height for n, p in seg.items()}, "promoted": ok, "reason": why, "challenger": m, "champion": cm}
+    if os.environ.get("MLFLOW_TRACKING_URI"):
+        _log_mlflow(res, T, spans, k, meta is not None, champ_path if ok else None)
+    return res
+
+
+def _log_mlflow(res: dict, T: datetime, spans, k, with_meta: bool, model_path: Path | None) -> None:
+    """One run per training; the `snapshot` tag lets the leaderboard compare only runs on the same snapshot."""
+    import mlflow  # optional dependency: pip install ".[mlflow]"
+
+    mlflow.set_experiment("ghrec")
+    with mlflow.start_run(run_name=res["snapshot"]):
+        mlflow.set_tags({"snapshot": res["snapshot"], "promoted": str(res["promoted"]), "gate_reason": res["reason"]})
+        mlflow.log_params({"T": T.date().isoformat(), "spans": list(spans), "k_core": list(k), "with_meta": with_meta})
+        name = lambda prefix, key: f"{prefix}_{key.replace('@', '_at_')}"  # '@' is not allowed in metric names
+        mlflow.log_metrics({name("challenger", n): v for n, v in res["challenger"].items()})
+        if res["champion"]:
+            mlflow.log_metrics({name("champion", n): v for n, v in res["champion"].items()})
+        if model_path:
+            mlflow.log_artifact(str(model_path))
 
 
 if __name__ == "__main__":
