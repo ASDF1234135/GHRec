@@ -1,4 +1,5 @@
 import gzip, json
+from datetime import date
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 from ghrec.data import clean, prepare, snapshot_version, split, synthetic
 from ghrec.pipeline import Pipeline
 from ghrec.enrich import RateLimited, enrich
-from ghrec.ingest import extract
+from ghrec.ingest import check, extract
 from ghrec.train import run
 
 T = datetime(2026, 11, 8)
@@ -174,3 +175,14 @@ def test_metadata_is_as_of_the_cutoff():
     assert p.topics[0] == {"old"}                      # the later fetch (after asof) is ignored
     assert p.lang[1] == -1 and p.topics[1] == frozenset()  # fetched after asof: language/topics unknown
     assert p.has_meta.tolist() == [1, 1] and p.age[1] > 6  # immutable created_at still gives age
+
+
+def test_qa_compares_only_with_earlier_days(tmp_path):
+    for d, n in [("2026-11-02", 50000), ("2026-11-03", 52000)]:
+        (tmp_path / f"raw_events/date={d}").mkdir(parents=True)
+        (tmp_path / f"raw_events/date={d}/manifest.json").write_text(json.dumps({"rows": n}))
+    df = lambda n: pl.DataFrame({"user": ["a"] * n, "repo": ["o/r"] * n})
+    assert check(df(21000), date(2026, 8, 12), tmp_path)["avg_7d"] is None  # earlier backfill day: nothing before it
+    assert check(df(51000), date(2026, 11, 4), tmp_path)["rows"] == 51000
+    with pytest.raises(ValueError):
+        check(df(10000), date(2026, 11, 4), tmp_path)  # a real drop is still caught

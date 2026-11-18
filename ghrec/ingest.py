@@ -27,8 +27,9 @@ def extract(files: list[str]) -> pl.DataFrame:
 def check(df: pl.DataFrame, day: date, root: Path) -> dict:
     n = df.height
     nulls = df.select(pl.col("user").is_null() | pl.col("repo").is_null()).to_series().mean() if n else 1.0
+    # the 7 days BEFORE this one: a backfill must not be judged against later (busier) days
     prev = [json.loads(Path(p).read_text())["rows"] for p in sorted(glob.glob(str(root / "raw_events/date=*/manifest.json")))
-            if Path(p).parent.name != f"date={day}"][-7:]
+            if Path(p).parent.name < f"date={day}"][-7:]
     avg = sum(prev) / len(prev) if prev else None
     if n == 0 or nulls > 0.01 or (avg and not 0.5 * avg <= n <= 2 * avg):
         raise ValueError(f"quality check failed for {day}: rows={n}, null_rate={nulls}, 7d_avg={avg}")
